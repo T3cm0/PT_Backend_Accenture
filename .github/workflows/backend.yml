@@ -22,6 +22,8 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    environment:
+      name: ${{ github.ref == 'refs/heads/main' && 'production' || 'testing' }}
     defaults:
       run:
         shell: bash
@@ -82,12 +84,22 @@ jobs:
       - name: Deploy to Cloud Run
         env:
           DB_URL: ${{ secrets.DB_URL }}
+          DB_URL_TEST: ${{ secrets.DB_URL_TEST }}
           DB_USERNAME: ${{ secrets.DB_USERNAME }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
         run: |
           SA_FLAG=""
           if [[ -n "${{ vars.GCP_RUN_SA }}" ]]; then
             SA_FLAG="--service-account ${{ vars.GCP_RUN_SA }}"
+          fi
+          
+          DB_URL_SELECTED="$DB_URL"
+          if [[ "${SPRING_PROFILE}" == "test" ]]; then
+            if [[ -z "${DB_URL_TEST}" ]]; then
+              echo "DB_URL_TEST secret is missing for test environment." >&2
+              exit 1
+            fi
+            DB_URL_SELECTED="$DB_URL_TEST"
           fi
 
           gcloud run deploy "${{ env.SERVICE }}" \
@@ -104,7 +116,7 @@ jobs:
             --port 8080 \
             --cpu-boost \
             $SA_FLAG \
-            --set-env-vars "SPRING_PROFILES_ACTIVE=${{ env.SPRING_PROFILE }},DB_URL=${DB_URL},DB_USERNAME=${DB_USERNAME},DB_PASSWORD=${DB_PASSWORD}"
+            --set-env-vars "SPRING_PROFILES_ACTIVE=${{ env.SPRING_PROFILE }},DB_URL=${DB_URL_SELECTED},DB_USERNAME=${DB_USERNAME},DB_PASSWORD=${DB_PASSWORD}"
 
       - name: Verify & Display Info
         run: |
