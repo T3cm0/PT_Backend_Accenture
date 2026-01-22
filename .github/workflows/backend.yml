@@ -15,36 +15,22 @@ env:
   REGION: ${{ vars.GCP_REGION }}
   AR_REPO: ${{ vars.ARTIFACT_REGISTRY_REPO || 'backend' }}
   CLOUDSQL_INSTANCE: ${{ vars.GCP_CLOUDSQL_INSTANCE }}
+  IMAGE_NAME: ${{ vars.IMAGE_NAME || 'backend' }}
 
 jobs:
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
-    environment:
-      name: ${{ github.ref == 'refs/heads/main' && 'production' || 'testing' }}
+    outputs:
+      image_uri_digest: ${{ steps.build-image.outputs.image_uri_digest }}
     defaults:
       run:
         shell: bash
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Define Environment Variables
-        run: |
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-            echo "SERVICE=backend-prod" >> $GITHUB_ENV
-            echo "IMAGE_NAME=backend-prod" >> $GITHUB_ENV
-            echo "SPRING_PROFILE=prod" >> $GITHUB_ENV
-          else
-            echo "SERVICE=backend-test" >> $GITHUB_ENV
-            echo "IMAGE_NAME=backend-test" >> $GITHUB_ENV
-            echo "SPRING_PROFILE=test" >> $GITHUB_ENV
-          fi
-          if [[ -z "${CLOUDSQL_INSTANCE}" ]]; then
-            echo "CLOUDSQL_INSTANCE=prueba-accenture-485020:us-central1:free-trial-first-project" >> $GITHUB_ENV
-          fi
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -70,6 +56,7 @@ jobs:
         run: ./mvnw test
 
       - name: Build & Push Docker image
+        id: build-image
         env:
           IMAGE_TAG: ${{ github.sha }}
         run: |
@@ -79,11 +66,35 @@ jobs:
           docker push "$IMAGE_URI"
 
           DIGEST=$(gcloud artifacts docker images describe "$IMAGE_URI" --format='value(image_summary.digest)')
-          echo "IMAGE_URI_DIGEST=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPO }}/${{ env.IMAGE_NAME }}@${DIGEST}" >> $GITHUB_ENV
+          IMAGE_URI_DIGEST="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPO }}/${{ env.IMAGE_NAME }}@${DIGEST}"
+          echo "image_uri_digest=${IMAGE_URI_DIGEST}" >> $GITHUB_OUTPUT
 
-      - name: Deploy to Cloud Run
+  deploy-test:
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: read
+      id-token: write
+    environment:
+      name: testing
+    env:
+      SERVICE: backend-test
+      SPRING_PROFILE: test
+      IMAGE_URI_DIGEST: ${{ needs.build.outputs.image_uri_digest }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Auth to GCP (WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SA_EMAIL }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy to Cloud Run (testing)
         env:
-          DB_URL: ${{ secrets.DB_URL }}
           DB_URL_TEST: ${{ secrets.DB_URL_TEST }}
           DB_USERNAME: ${{ secrets.DB_USERNAME }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
@@ -92,22 +103,18 @@ jobs:
           if [[ -n "${{ vars.GCP_RUN_SA }}" ]]; then
             SA_FLAG="--service-account ${{ vars.GCP_RUN_SA }}"
           fi
-          
-          DB_URL_SELECTED="$DB_URL"
-          if [[ "${SPRING_PROFILE}" == "test" ]]; then
-            if [[ -z "${DB_URL_TEST}" ]]; then
-              echo "DB_URL_TEST secret is missing for test environment." >&2
-              exit 1
-            fi
-            DB_URL_SELECTED="$DB_URL_TEST"
+          if [[ -z "${DB_URL_TEST}" ]]; then
+            echo "DB_URL_TEST secret is missing for test environment." >&2
+            exit 1
           fi
+          CLOUDSQL_INSTANCE_SELECTED="${CLOUDSQL_INSTANCE:-prueba-accenture-485020:us-central1:free-trial-first-project}"
 
           gcloud run deploy "${{ env.SERVICE }}" \
             --region "${{ env.REGION }}" \
             --image "${IMAGE_URI_DIGEST}" \
             --platform managed \
             --allow-unauthenticated \
-            --add-cloudsql-instances "${{ env.CLOUDSQL_INSTANCE }}" \
+            --add-cloudsql-instances "${CLOUDSQL_INSTANCE_SELECTED}" \
             --memory 2Gi \
             --cpu 2 \
             --min-instances 0 \
@@ -116,9 +123,85 @@ jobs:
             --port 8080 \
             --cpu-boost \
             $SA_FLAG \
-            --set-env-vars "SPRING_PROFILES_ACTIVE=${{ env.SPRING_PROFILE }},DB_URL=${DB_URL_SELECTED},DB_USERNAME=${DB_USERNAME},DB_PASSWORD=${DB_PASSWORD}"
+            --set-env-vars "SPRING_PROFILES_ACTIVE=${{ env.SPRING_PROFILE }},DB_URL=${DB_URL_TEST},DB_USERNAME=${DB_USERNAME},DB_PASSWORD=${DB_PASSWORD}"
 
-      - name: Verify & Display Info
+      - name: Verify & Display Info (testing)
+        run: |
+          SERVICE_URL=$(gcloud run services describe "${{ env.SERVICE }}" \
+            --region "${{ env.REGION }}" \
+            --format='value(status.url)')
+
+          echo "Backend URL: ${SERVICE_URL}"
+          sleep 20
+
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${SERVICE_URL}/api/franchises" || echo "000")
+
+          if [ "$HTTP_CODE" -eq 200 ]; then
+            echo "Backend deployed successfully."
+            echo "Health endpoint: ${SERVICE_URL}/api/franchises"
+          else
+            echo "Warning: endpoint returned HTTP ${HTTP_CODE}"
+            echo "Logs: https://console.cloud.google.com/run/detail/${{ env.REGION }}/${{ env.SERVICE }}/logs"
+          fi
+
+  deploy-prod:
+    runs-on: ubuntu-latest
+    needs: deploy-test
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      id-token: write
+    environment:
+      name: production
+    env:
+      SERVICE: backend-prod
+      SPRING_PROFILE: prod
+      IMAGE_URI_DIGEST: ${{ needs.build.outputs.image_uri_digest }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Auth to GCP (WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SA_EMAIL }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy to Cloud Run (production)
+        env:
+          DB_URL: ${{ secrets.DB_URL }}
+          DB_USERNAME: ${{ secrets.DB_USERNAME }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        run: |
+          SA_FLAG=""
+          if [[ -n "${{ vars.GCP_RUN_SA }}" ]]; then
+            SA_FLAG="--service-account ${{ vars.GCP_RUN_SA }}"
+          fi
+          if [[ -z "${DB_URL}" ]]; then
+            echo "DB_URL secret is missing for production environment." >&2
+            exit 1
+          fi
+          CLOUDSQL_INSTANCE_SELECTED="${CLOUDSQL_INSTANCE:-prueba-accenture-485020:us-central1:free-trial-first-project}"
+
+          gcloud run deploy "${{ env.SERVICE }}" \
+            --region "${{ env.REGION }}" \
+            --image "${IMAGE_URI_DIGEST}" \
+            --platform managed \
+            --allow-unauthenticated \
+            --add-cloudsql-instances "${CLOUDSQL_INSTANCE_SELECTED}" \
+            --memory 2Gi \
+            --cpu 2 \
+            --min-instances 0 \
+            --max-instances 10 \
+            --timeout 300 \
+            --port 8080 \
+            --cpu-boost \
+            $SA_FLAG \
+            --set-env-vars "SPRING_PROFILES_ACTIVE=${{ env.SPRING_PROFILE }},DB_URL=${DB_URL},DB_USERNAME=${DB_USERNAME},DB_PASSWORD=${DB_PASSWORD}"
+
+      - name: Verify & Display Info (production)
         run: |
           SERVICE_URL=$(gcloud run services describe "${{ env.SERVICE }}" \
             --region "${{ env.REGION }}" \
