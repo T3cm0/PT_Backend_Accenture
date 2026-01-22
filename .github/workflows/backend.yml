@@ -25,6 +25,7 @@ jobs:
       id-token: write
     outputs:
       image_uri_digest: ${{ steps.build-image.outputs.image_uri_digest }}
+      image_uri: ${{ steps.build-image.outputs.image_uri }}
     defaults:
       run:
         shell: bash
@@ -68,6 +69,7 @@ jobs:
           DIGEST=$(gcloud artifacts docker images describe "$IMAGE_URI" --format='value(image_summary.digest)')
           IMAGE_URI_DIGEST="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPO }}/${{ env.IMAGE_NAME }}@${DIGEST}"
           echo "image_uri_digest=${IMAGE_URI_DIGEST}" >> $GITHUB_OUTPUT
+          echo "image_uri=${IMAGE_URI}" >> $GITHUB_OUTPUT
 
   deploy-test:
     runs-on: ubuntu-latest
@@ -81,6 +83,7 @@ jobs:
       SERVICE: backend-test
       SPRING_PROFILE: test
       IMAGE_URI_DIGEST: ${{ needs.build.outputs.image_uri_digest }}
+      IMAGE_URI: ${{ needs.build.outputs.image_uri }}
     defaults:
       run:
         shell: bash
@@ -108,10 +111,14 @@ jobs:
             exit 1
           fi
           CLOUDSQL_INSTANCE_SELECTED="${CLOUDSQL_INSTANCE:-prueba-accenture-485020:us-central1:free-trial-first-project}"
+          IMAGE_SELECTED="${IMAGE_URI_DIGEST:-$IMAGE_URI}"
+          if [[ -z "${IMAGE_SELECTED}" ]]; then
+            IMAGE_SELECTED="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${IMAGE_NAME}:${GITHUB_SHA}"
+          fi
 
           gcloud run deploy "${{ env.SERVICE }}" \
             --region "${{ env.REGION }}" \
-            --image "${IMAGE_URI_DIGEST}" \
+            --image "${IMAGE_SELECTED}" \
             --platform managed \
             --allow-unauthenticated \
             --add-cloudsql-instances "${CLOUDSQL_INSTANCE_SELECTED}" \
@@ -157,6 +164,7 @@ jobs:
       SERVICE: backend-prod
       SPRING_PROFILE: prod
       IMAGE_URI_DIGEST: ${{ needs.build.outputs.image_uri_digest }}
+      IMAGE_URI: ${{ needs.build.outputs.image_uri }}
     defaults:
       run:
         shell: bash
@@ -184,10 +192,14 @@ jobs:
             exit 1
           fi
           CLOUDSQL_INSTANCE_SELECTED="${CLOUDSQL_INSTANCE:-prueba-accenture-485020:us-central1:free-trial-first-project}"
+          IMAGE_SELECTED="${IMAGE_URI_DIGEST:-$IMAGE_URI}"
+          if [[ -z "${IMAGE_SELECTED}" ]]; then
+            IMAGE_SELECTED="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${IMAGE_NAME}:${GITHUB_SHA}"
+          fi
 
           gcloud run deploy "${{ env.SERVICE }}" \
             --region "${{ env.REGION }}" \
-            --image "${IMAGE_URI_DIGEST}" \
+            --image "${IMAGE_SELECTED}" \
             --platform managed \
             --allow-unauthenticated \
             --add-cloudsql-instances "${CLOUDSQL_INSTANCE_SELECTED}" \
