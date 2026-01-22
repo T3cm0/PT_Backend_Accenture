@@ -262,3 +262,167 @@ Las propiedades de cada entorno estan en:
 
 - `src/main/resources/application-test.properties`
 - `src/main/resources/application-prod.properties`
+
+## Pruebas en entornos desplegados (para reclutadores)
+
+Se valido el flujo completo: crear franquicia/sucursal/producto, actualizar, consultar top-stock y eliminar (soft delete).
+
+### Test
+
+```powershell
+$base = "https://backend-test-yvzzo66h2a-uc.a.run.app"
+
+$fr = Invoke-RestMethod -Method Post "$base/api/franchises" -ContentType "application/json" -Body '{"name":"Franquicia Test"}'
+$frId = $fr.id
+
+Invoke-RestMethod "$base/api/franchises"
+
+$br = Invoke-RestMethod -Method Post "$base/api/franchises/$frId/branches" -ContentType "application/json" -Body '{"name":"Sucursal Test"}'
+$brId = $br.id
+
+Invoke-RestMethod "$base/api/franchises/$frId/branches"
+
+$pr = Invoke-RestMethod -Method Post "$base/api/branches/$brId/products" -ContentType "application/json" -Body '{"name":"Producto Test","stock":10}'
+$prId = $pr.id
+
+Invoke-RestMethod "$base/api/branches/$brId/products"
+Invoke-RestMethod "$base/api/products/$prId"
+
+Invoke-RestMethod -Method Put "$base/api/products/$prId" -ContentType "application/json" -Body '{"name":"Producto Test","stock":25}'
+Invoke-RestMethod -Method Put "$base/api/branches/$brId" -ContentType "application/json" -Body '{"name":"Sucursal Test v2"}'
+Invoke-RestMethod -Method Put "$base/api/franchises/$frId" -ContentType "application/json" -Body '{"name":"Franquicia Test v2"}'
+
+Invoke-RestMethod "$base/api/franchises/$frId"
+Invoke-RestMethod "$base/api/franchises/$frId/top-stock-products"
+
+Invoke-WebRequest -Method Delete "$base/api/products/$prId" | Select-Object StatusCode
+Invoke-WebRequest -Method Delete "$base/api/branches/$brId" | Select-Object StatusCode
+Invoke-WebRequest -Method Delete "$base/api/franchises/$frId" | Select-Object StatusCode
+
+Invoke-RestMethod "$base/api/franchises"
+```
+
+```bash
+base="https://backend-test-yvzzo66h2a-uc.a.run.app"
+
+fr=$(curl -s -X POST "$base/api/franchises" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Franquicia Test"}')
+frId=$(echo "$fr" | jq -r '.id')
+
+curl -s "$base/api/franchises"
+
+br=$(curl -s -X POST "$base/api/franchises/$frId/branches" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Sucursal Test"}')
+brId=$(echo "$br" | jq -r '.id')
+
+curl -s "$base/api/franchises/$frId/branches"
+
+pr=$(curl -s -X POST "$base/api/branches/$brId/products" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Producto Test","stock":10}')
+prId=$(echo "$pr" | jq -r '.id')
+
+curl -s "$base/api/branches/$brId/products"
+curl -s "$base/api/products/$prId"
+
+curl -s -X PUT "$base/api/products/$prId" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Producto Test","stock":25}'
+curl -s -X PUT "$base/api/branches/$brId" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Sucursal Test v2"}'
+curl -s -X PUT "$base/api/franchises/$frId" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Franquicia Test v2"}'
+
+curl -s "$base/api/franchises/$frId"
+curl -s "$base/api/franchises/$frId/top-stock-products"
+
+curl -i -X DELETE "$base/api/products/$prId"
+curl -i -X DELETE "$base/api/branches/$brId"
+curl -i -X DELETE "$base/api/franchises/$frId"
+
+curl -s "$base/api/franchises"
+```
+
+### Prod
+
+```powershell
+$base = "https://backend-prod-yvzzo66h2a-uc.a.run.app"
+
+$fr = Invoke-RestMethod -Method Post "$base/api/franchises" -ContentType "application/json" -Body '{"name":"Franquicia Prod"}'
+$frId = $fr.id
+
+Invoke-RestMethod "$base/api/franchises"
+
+$br = Invoke-RestMethod -Method Post "$base/api/franchises/$frId/branches" -ContentType "application/json" -Body '{"name":"Sucursal Prod"}'
+$brId = $br.id
+
+Invoke-RestMethod "$base/api/franchises/$frId/branches"
+
+$pr = Invoke-RestMethod -Method Post "$base/api/branches/$brId/products" -ContentType "application/json" -Body '{"name":"Producto Prod","stock":10}'
+$prId = $pr.id
+
+Invoke-RestMethod "$base/api/branches/$brId/products"
+Invoke-RestMethod "$base/api/products/$prId"
+
+Invoke-RestMethod -Method Put "$base/api/products/$prId" -ContentType "application/json" -Body '{"name":"Producto Prod","stock":25}'
+Invoke-RestMethod -Method Put "$base/api/branches/$brId" -ContentType "application/json" -Body '{"name":"Sucursal Prod v2"}'
+Invoke-RestMethod -Method Put "$base/api/franchises/$frId" -ContentType "application/json" -Body '{"name":"Franquicia Prod v2"}'
+
+Invoke-RestMethod "$base/api/franchises/$frId"
+Invoke-RestMethod "$base/api/franchises/$frId/top-stock-products"
+
+Invoke-WebRequest -Method Delete "$base/api/products/$prId" | Select-Object StatusCode
+Invoke-WebRequest -Method Delete "$base/api/branches/$brId" | Select-Object StatusCode
+Invoke-WebRequest -Method Delete "$base/api/franchises/$frId" | Select-Object StatusCode
+
+Invoke-RestMethod "$base/api/franchises"
+```
+
+```bash
+base="https://backend-prod-yvzzo66h2a-uc.a.run.app"
+
+fr=$(curl -s -X POST "$base/api/franchises" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Franquicia Prod"}')
+frId=$(echo "$fr" | jq -r '.id')
+
+curl -s "$base/api/franchises"
+
+br=$(curl -s -X POST "$base/api/franchises/$frId/branches" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Sucursal Prod"}')
+brId=$(echo "$br" | jq -r '.id')
+
+curl -s "$base/api/franchises/$frId/branches"
+
+pr=$(curl -s -X POST "$base/api/branches/$brId/products" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Producto Prod","stock":10}')
+prId=$(echo "$pr" | jq -r '.id')
+
+curl -s "$base/api/branches/$brId/products"
+curl -s "$base/api/products/$prId"
+
+curl -s -X PUT "$base/api/products/$prId" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Producto Prod","stock":25}'
+curl -s -X PUT "$base/api/branches/$brId" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Sucursal Prod v2"}'
+curl -s -X PUT "$base/api/franchises/$frId" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Franquicia Prod v2"}'
+
+curl -s "$base/api/franchises/$frId"
+curl -s "$base/api/franchises/$frId/top-stock-products"
+
+curl -i -X DELETE "$base/api/products/$prId"
+curl -i -X DELETE "$base/api/branches/$brId"
+curl -i -X DELETE "$base/api/franchises/$frId"
+
+curl -s "$base/api/franchises"
+```
