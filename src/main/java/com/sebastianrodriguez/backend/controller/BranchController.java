@@ -20,6 +20,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+/**
+ * Controlador REST para operaciones sobre sucursales y productos por sucursal.
+ */
 @RestController
 @RequestMapping("/api/branches")
 public class BranchController {
@@ -27,16 +30,35 @@ public class BranchController {
     private final BranchService branchService;
     private final ProductService productService;
 
+    /**
+     * Construye el controlador con sus dependencias.
+     *
+     * @param branchService servicio de sucursales.
+     * @param productService servicio de productos.
+     */
     public BranchController(BranchService branchService, ProductService productService) {
         this.branchService = branchService;
         this.productService = productService;
     }
 
+    /**
+     * Obtiene el detalle de una sucursal con sus productos.
+     *
+     * @param id identificador de la sucursal.
+     * @return detalle de la sucursal.
+     */
     @GetMapping("/{id}")
     public BranchDetailResponse get(@PathVariable Long id) {
         return branchService.get(id);
     }
 
+    /**
+     * Actualiza el nombre de una sucursal.
+     *
+     * @param id identificador de la sucursal.
+     * @param request datos a actualizar.
+     * @return sucursal actualizada.
+     */
     @PutMapping("/{id}")
     public BranchSummaryResponse update(
             @PathVariable Long id,
@@ -45,12 +67,25 @@ public class BranchController {
         return branchService.update(id, request);
     }
 
+    /**
+     * Elimina una sucursal con borrado logico y cascada sobre productos.
+     *
+     * @param id identificador de la sucursal.
+     * @return respuesta sin contenido.
+     */
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         branchService.delete(id);
         return ResponseEntity.noContent().build();
     }
 
+    /**
+     * Crea un producto dentro de una sucursal.
+     *
+     * @param branchId identificador de la sucursal.
+     * @param request datos del producto.
+     * @return producto creado.
+     */
     @PostMapping("/{branchId}/products")
     public ResponseEntity<ProductResponse> createProduct(
             @PathVariable Long branchId,
@@ -60,6 +95,12 @@ public class BranchController {
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
+    /**
+     * Lista los productos de una sucursal.
+     *
+     * @param branchId identificador de la sucursal.
+     * @return listado de productos.
+     */
     @GetMapping("/{branchId}/products")
     public List<ProductResponse> listProducts(@PathVariable Long branchId) {
         return productService.listByBranch(branchId);

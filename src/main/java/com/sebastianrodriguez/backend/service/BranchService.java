@@ -16,6 +16,9 @@ import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * Logica de negocio para sucursales.
+ */
 @Service
 public class BranchService {
 
@@ -23,6 +26,13 @@ public class BranchService {
     private final FranchiseRepository franchiseRepository;
     private final ProductRepository productRepository;
 
+    /**
+     * Construye el servicio con sus repositorios.
+     *
+     * @param branchRepository repositorio de sucursales.
+     * @param franchiseRepository repositorio de franquicias.
+     * @param productRepository repositorio de productos.
+     */
     public BranchService(
             BranchRepository branchRepository,
             FranchiseRepository franchiseRepository,
@@ -33,6 +43,13 @@ public class BranchService {
         this.productRepository = productRepository;
     }
 
+    /**
+     * Crea una sucursal en una franquicia existente.
+     *
+     * @param franchiseId identificador de la franquicia.
+     * @param request datos de la sucursal.
+     * @return resumen de la sucursal creada.
+     */
     @Transactional
     public BranchSummaryResponse create(Long franchiseId, BranchCreateRequest request) {
         Franchise franchise = franchiseRepository.findById(franchiseId)
@@ -44,6 +61,12 @@ public class BranchService {
         return toSummary(saved);
     }
 
+    /**
+     * Lista sucursales de una franquicia.
+     *
+     * @param franchiseId identificador de la franquicia.
+     * @return listado de sucursales.
+     */
     @Transactional(readOnly = true)
     public List<BranchSummaryResponse> listByFranchise(Long franchiseId) {
         if (!franchiseRepository.existsById(franchiseId)) {
@@ -55,6 +78,12 @@ public class BranchService {
                 .toList();
     }
 
+    /**
+     * Obtiene el detalle de una sucursal con sus productos.
+     *
+     * @param id identificador de la sucursal.
+     * @return detalle de la sucursal.
+     */
     @Transactional(readOnly = true)
     public BranchDetailResponse get(Long id) {
         Branch branch = branchRepository.findWithProductsById(id)
@@ -62,6 +91,13 @@ public class BranchService {
         return toDetail(branch);
     }
 
+    /**
+     * Actualiza el nombre de una sucursal.
+     *
+     * @param id identificador de la sucursal.
+     * @param request datos a actualizar.
+     * @return resumen actualizado.
+     */
     @Transactional
     public BranchSummaryResponse update(Long id, BranchUpdateRequest request) {
         Branch branch = branchRepository.findById(id)
@@ -70,6 +106,11 @@ public class BranchService {
         return toSummary(branchRepository.save(branch));
     }
 
+    /**
+     * Elimina una sucursal con borrado logico y cascada sobre productos.
+     *
+     * @param id identificador de la sucursal.
+     */
     @Transactional
     public void delete(Long id) {
         Branch branch = branchRepository.findById(id)
@@ -78,10 +119,22 @@ public class BranchService {
         branchRepository.delete(branch);
     }
 
+    /**
+     * Mapea una sucursal a su respuesta resumida.
+     *
+     * @param branch entidad de sucursal.
+     * @return DTO resumen.
+     */
     private BranchSummaryResponse toSummary(Branch branch) {
         return new BranchSummaryResponse(branch.getId(), branch.getName());
     }
 
+    /**
+     * Mapea una sucursal a su detalle con productos.
+     *
+     * @param branch entidad de sucursal.
+     * @return DTO de detalle.
+     */
     private BranchDetailResponse toDetail(Branch branch) {
         List<ProductResponse> products = branch.getProducts()
                 .stream()
@@ -90,6 +143,12 @@ public class BranchService {
         return new BranchDetailResponse(branch.getId(), branch.getName(), products);
     }
 
+    /**
+     * Mapea un producto a su respuesta.
+     *
+     * @param product entidad de producto.
+     * @return DTO de producto.
+     */
     private ProductResponse toResponse(Product product) {
         return new ProductResponse(product.getId(), product.getName(), product.getStock());
     }

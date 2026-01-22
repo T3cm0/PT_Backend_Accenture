@@ -18,6 +18,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+/**
+ * Prueba de integracion del flujo CRUD con borrado logico y cascada.
+ */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -29,6 +32,9 @@ class FranchiseApiCrudTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    /**
+     * Ejecuta un flujo completo: crear, actualizar, reportar, borrar y validar cascade.
+     */
     @Test
     void crudFlowWithSoftDeleteCascade() throws Exception {
         long franchiseId = createFranchise("Franquicia Uno");
@@ -86,6 +92,12 @@ class FranchiseApiCrudTest {
                 .andExpect(status().isNotFound());
     }
 
+    /**
+     * Crea una franquicia via API y retorna su id.
+     *
+     * @param name nombre de la franquicia.
+     * @return id creado.
+     */
     private long createFranchise(String name) throws Exception {
         String response = mockMvc.perform(post("/api/franchises")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -98,6 +110,13 @@ class FranchiseApiCrudTest {
         return node.get("id").asLong();
     }
 
+    /**
+     * Crea una sucursal via API y retorna su id.
+     *
+     * @param franchiseId id de la franquicia.
+     * @param name nombre de la sucursal.
+     * @return id creado.
+     */
     private long createBranch(long franchiseId, String name) throws Exception {
         String response = mockMvc.perform(post("/api/franchises/{id}/branches", franchiseId)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -110,6 +129,14 @@ class FranchiseApiCrudTest {
         return node.get("id").asLong();
     }
 
+    /**
+     * Crea un producto via API y retorna su id.
+     *
+     * @param branchId id de la sucursal.
+     * @param name nombre del producto.
+     * @param stock stock inicial.
+     * @return id creado.
+     */
     private long createProduct(long branchId, String name, int stock) throws Exception {
         String response = mockMvc.perform(post("/api/branches/{id}/products", branchId)
                         .contentType(MediaType.APPLICATION_JSON)

@@ -13,21 +13,42 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+/**
+ * Controlador REST para operaciones CRUD de productos.
+ */
 @RestController
 @RequestMapping("/api/products")
 public class ProductController {
 
     private final ProductService productService;
 
+    /**
+     * Construye el controlador con su dependencia principal.
+     *
+     * @param productService servicio de productos.
+     */
     public ProductController(ProductService productService) {
         this.productService = productService;
     }
 
+    /**
+     * Obtiene el detalle de un producto.
+     *
+     * @param id identificador del producto.
+     * @return producto encontrado.
+     */
     @GetMapping("/{id}")
     public ProductResponse get(@PathVariable Long id) {
         return productService.get(id);
     }
 
+    /**
+     * Actualiza el nombre y stock de un producto.
+     *
+     * @param id identificador del producto.
+     * @param request datos a actualizar.
+     * @return producto actualizado.
+     */
     @PutMapping("/{id}")
     public ProductResponse update(
             @PathVariable Long id,
@@ -36,6 +57,12 @@ public class ProductController {
         return productService.update(id, request);
     }
 
+    /**
+     * Elimina un producto (borrado logico).
+     *
+     * @param id identificador del producto.
+     * @return respuesta sin contenido.
+     */
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         productService.delete(id);

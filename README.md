@@ -3,6 +3,11 @@
 Backend en Spring Boot pensado para ejecutarse con dos entornos: `test` y `prod`.
 La base de datos es MySQL en Cloud SQL (GCP).
 
+## Entornos desplegados
+
+- **Prod**: https://backend-prod-yvzzo66h2a-uc.a.run.app
+- **Test**: https://backend-test-yvzzo66h2a-uc.a.run.app
+
 ## Autor
 
 Este codigo fue desarrollado por Sebastian Rodriguez.
@@ -31,6 +36,7 @@ Perfiles disponibles:
 Variables requeridas:
 
 - `DB_URL`
+- `DB_URL_TEST` (solo para CI/CD en entorno test)
 - `DB_USERNAME`
 - `DB_PASSWORD`
 - `SPRING_PROFILES_ACTIVE` (opcional; si no se define, usa `test`)
@@ -42,6 +48,15 @@ Puedes partir de un archivo local con variables:
 - `.env.example` como plantilla
 
 Nota: los `.env*` estan ignorados en git por seguridad.
+
+### Cloud Run + Cloud SQL (socket factory)
+
+En Cloud Run se recomienda usar el conector con socket factory en el `DB_URL`:
+
+- Prod:
+  `jdbc:mysql:///ProdPT?cloudSqlInstance=prueba-accenture-485020:us-central1:free-trial-first-project&socketFactory=com.google.cloud.sql.mysql.SocketFactory&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC`
+- Test:
+  `jdbc:mysql:///TestPT?cloudSqlInstance=prueba-accenture-485020:us-central1:free-trial-first-project&socketFactory=com.google.cloud.sql.mysql.SocketFactory&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC`
 
 ## Desarrollo local
 
@@ -198,10 +213,15 @@ Secrets de repositorio (Settings -> Secrets):
 - `GCP_WIF_PROVIDER`
 - `GCP_SA_EMAIL`
 - `DB_URL`
+- `DB_URL_TEST`
 - `DB_USERNAME`
 - `DB_PASSWORD`
 
-El workflow usa `main` -> prod y `develop` -> test.
+Flujo actual:
+
+- build + tests + push de imagen
+- despliegue automatico a **testing**
+- despliegue a **production** solo tras aprobacion en GitHub Environments
 
 ## API (CRUD)
 
