@@ -1,0 +1,126 @@
+name: Backend CI/CD - GCP
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - "src/**"
+      - "pom.xml"
+      - "Dockerfile"
+      - "Dockerfile.test"
+      - ".github/workflows/backend.yml"
+
+env:
+  PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+  REGION: ${{ vars.GCP_REGION }}
+  AR_REPO: ${{ vars.ARTIFACT_REGISTRY_REPO || 'backend' }}
+  CLOUDSQL_INSTANCE: ${{ vars.GCP_CLOUDSQL_INSTANCE }}
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Define Environment Variables
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "SERVICE=backend-prod" >> $GITHUB_ENV
+            echo "IMAGE_NAME=backend-prod" >> $GITHUB_ENV
+            echo "SPRING_PROFILE=prod" >> $GITHUB_ENV
+          else
+            echo "SERVICE=backend-test" >> $GITHUB_ENV
+            echo "IMAGE_NAME=backend-test" >> $GITHUB_ENV
+            echo "SPRING_PROFILE=test" >> $GITHUB_ENV
+          fi
+          if [[ -z "${CLOUDSQL_INSTANCE}" ]]; then
+            echo "CLOUDSQL_INSTANCE=prueba-accenture-485020:us-central1:free-trial-first-project" >> $GITHUB_ENV
+          fi
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Auth to GCP (WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SA_EMAIL }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker to Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Give execute permissions to mvnw
+        run: chmod +x mvnw
+
+      - name: Run tests
+        run: ./mvnw test
+
+      - name: Build & Push Docker image
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          IMAGE_URI="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPO }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG}"
+
+          docker build -t "$IMAGE_URI" .
+          docker push "$IMAGE_URI"
+
+          DIGEST=$(gcloud artifacts docker images describe "$IMAGE_URI" --format='value(image_summary.digest)')
+          echo "IMAGE_URI_DIGEST=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPO }}/${{ env.IMAGE_NAME }}@${DIGEST}" >> $GITHUB_ENV
+
+      - name: Deploy to Cloud Run
+        env:
+          DB_URL: ${{ secrets.DB_URL }}
+          DB_USERNAME: ${{ secrets.DB_USERNAME }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        run: |
+          SA_FLAG=""
+          if [[ -n "${{ vars.GCP_RUN_SA }}" ]]; then
+            SA_FLAG="--service-account ${{ vars.GCP_RUN_SA }}"
+          fi
+
+          gcloud run deploy "${{ env.SERVICE }}" \
+            --region "${{ env.REGION }}" \
+            --image "${IMAGE_URI_DIGEST}" \
+            --platform managed \
+            --allow-unauthenticated \
+            --add-cloudsql-instances "${{ env.CLOUDSQL_INSTANCE }}" \
+            --memory 2Gi \
+            --cpu 2 \
+            --min-instances 0 \
+            --max-instances 10 \
+            --timeout 300 \
+            --port 8080 \
+            --cpu-boost \
+            $SA_FLAG \
+            --set-env-vars "SPRING_PROFILES_ACTIVE=${{ env.SPRING_PROFILE }},DB_URL=${DB_URL},DB_USERNAME=${DB_USERNAME},DB_PASSWORD=${DB_PASSWORD}"
+
+      - name: Verify & Display Info
+        run: |
+          SERVICE_URL=$(gcloud run services describe "${{ env.SERVICE }}" \
+            --region "${{ env.REGION }}" \
+            --format='value(status.url)')
+
+          echo "Backend URL: ${SERVICE_URL}"
+          sleep 20
+
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${SERVICE_URL}/api/franchises" || echo "000")
+
+          if [ "$HTTP_CODE" -eq 200 ]; then
+            echo "Backend deployed successfully."
+            echo "Health endpoint: ${SERVICE_URL}/api/franchises"
+          else
+            echo "Warning: endpoint returned HTTP ${HTTP_CODE}"
+            echo "Logs: https://console.cloud.google.com/run/detail/${{ env.REGION }}/${{ env.SERVICE }}/logs"
+          fi
